@@ -227,6 +227,15 @@ class IdaDataFrame(object):
         else:
             None
 
+    #### added ####
+    def set_indexer(self, value):
+        """
+        Convenience function to define an indexer on an existing dataframe
+        """        
+        return IdaDataFrame(self._idadb, self.tablename, indexer = value)
+    #### end added ####
+
+        
     @indexer.setter
     def indexer(self, value):
         """
@@ -1874,8 +1883,7 @@ class IdaDataFrame(object):
             if not display_yes:
                 return
             tempname = self._idadb._get_valid_tablename()
-            self._prepare_and_execute("CREATE TABLE %s LIKE %s"%(tempname, tablename))
-            self._prepare_and_execute("INSERT INTO %s (SELECT * FROM %s)"%(tempname, tablename))
+            self._prepare_and_execute("CREATE TABLE %s AS (SELECT * FROM %s) WITH DATA"%(tempname, tablename))
             try:
                 self._idadb.drop_table(tablename)
             except:
@@ -1903,8 +1911,7 @@ class IdaDataFrame(object):
 
         name = self.internal_state.current_state
 
-        self._prepare_and_execute("CREATE TABLE %s LIKE %s"%(tablename, name))
-        self._prepare_and_execute("INSERT INTO %s (SELECT * FROM %s)"%(tablename, name))
+        self._prepare_and_execute("CREATE TABLE %s AS (SELECT * FROM %s) WITH DATA"%(tablename, name))
 
         # Reset the cache
         self._idadb._reset_attributes("cache_show_tables")
@@ -2316,3 +2323,267 @@ class IdaDataFrame(object):
         check_numeric_columns(self)
         if isinstance(other, ibmdbpy.IdaSeries)|isinstance(other, IdaDataFrame):
             check_numeric_columns(other)
+
+###############################################################################
+### New functionalities for IdaDataFrames -- EXPERIMENTAL
+###############################################################################
+    
+    def delete_na2(self, columns, logic = "any", inplace = False):
+        """
+        
+        Parameters
+        -------
+        columns: list of eligible column names
+        logic: str, optional, "any" by default. If logic is set to "any" then all rows which contain a NaN value in any 
+        (id est at least one) of the cited columns is deleted, this is a union condition; 
+        if logic is set to "all", then only rows containing null values in all the fields are deleted, this is an intersection condition.         
+        inplace: bool, optional, False by default. If True, then the underlying table is physically modified,
+        if False, then the original objects remain unaffected, a copy of the IdaDataFrame is made and modified. 
+        
+        Returns
+        -------
+        If inplace is True, the original table is modified and the IdaDataFrame will be modified accordingly.
+        If inplace is False, a new IdaDataFrame is returned, the original table is not affected.
+        
+        Examples
+        -------
+        idadf.delete_na(["COL_1", "COL_2"], inplace = True)
+        # each row of the original table is physically deleted if there is a NULL value in one of the listed columns
+        new_idadf = idadf.delete_na(["COL_1", "COL_2"], union = False)
+        # a new IdaDataFrame is created, rows will be deleted only if all the listed columns have a NULL value.
+        """
+        
+        # Check if list columns is not empty
+        if len(columns)<1:
+            raise IdaDataFrameError("You must specify the columns as a list of eligible names")
+        # Check if column names are eligible
+        for column_name in columns:
+            if not isinstance(column_name, six.string_types):
+                raise TypeError("%s is not of string type"%(column_name))
+            if column_name not in self.columns:
+                raise ValueError("%s refers to a columns that doesn't exists in self"%(column_name))
+        
+        idadb = self._idadb
+        
+        if inplace == True:
+            # Write DELETE query on original table
+            tablename = self.tablename
+            query = 'DELETE FROM %s WHERE "%s" IS NULL'%(tablename, columns[0])
+            
+            if len(columns)>1:
+                if logic == "any":
+                    for i in range(1,len(columns)):
+                        query = query + ' OR "%s" IS NULL'%columns[i]
+                if logic == "all":
+                    for i in range(1, len(columns)):
+                        query = query + ' AND "%s" IS NULL'%columns[i]                        
+            idadb.ida_query(query)
+
+        else:
+            # Create a view, DELETE statement on the view
+            tablename = self.tablename 
+            idadb._create_table
+            query = 'SELECT FROM %s WHERE "%s" IS NULL'%(tablename, columns[0])
+            
+            if len(columns)>1:
+                if logic == "any":
+                    for i in range(1,len(columns)):
+                        query = query + ' AND "%s" IS NOT NULL'%columns[i]
+                if logic == "all":
+                    for i in range(1, len(columns)):
+                        query = query + ' OR "%s" IS NOT NULL'%columns[i]                        
+            idadb.ida_query(query)
+            # Define a new IdaDataFrame pointing to this view
+            idadf = IdaDataFrame(idadb, viewname, indexer = self.indexer)
+            # copy internal state of self ??
+            # Drop view ??
+            # idadb.drop_view(viewname)
+            
+            return idadf
+
+    
+    
+    def delete_na(self, columns, union = True, destructive = False):
+        """
+        columns: list of eligible column names
+        union: optional, if union is set to True then all rows which contain a NaN value in at least one 
+        of the cited columns is deleted; if union is set to False, then only rows containing null values 
+        in all the fields are deleted. True by default.        
+        destructive: optional, if True, then the underlying table is physically modified,
+        if False, a view is created, rows are deleted in the view only and the result is outputed. The original 
+        objects remain untouched. False by default
+        
+        Returns: new IdaDataFrame object - if destructive = False, then it is a newly created IdaDataFrame, 
+        so you might want to write new_idadf = idadf.delete_na(...);
+        if destructive is True, then the current IdaDataFrame has been modified and is returned, idadf.delete_na(...) is enough.
+        """
+        # Check if list columns is not empty
+        if len(columns)<1:
+            raise IdaDataFrameError("You must specify the columns as a list of eligible names")
+        # Check if column names are eligible
+        for column_name in columns:
+            if not isinstance(column_name, six.string_types):
+                raise TypeError("%s is not of string type"%(column_name))
+            if column_name not in self.columns:
+                raise ValueError("%s refers to a columns that doesn't exists in self"%(column_name))
+        
+        idadb = self._idadb
+        
+        if destructive == True:
+            
+            print("The table %s will be physically modified." %self.tablename)
+            print("Any IdaDataFrame pointing this table might be modified accordingly.")
+            
+            tablename = self.tablename
+            query = 'DELETE FROM %s WHERE "%s" IS NULL'%(tablename, columns[0])
+            
+            if len(columns)==1:
+                if columns[0] not in self._get_all_columns_in_table():
+                # Detect it is a virtual ID, the deletion cannot be destructive
+                    return self.delete_na(self, columns, union, destructive=False)
+                # otherwise, the query can be executed
+                self.ida_query(query)
+                return self
+                
+            else:
+                if union == True:
+                    for i in range(1,len(columns)):
+                        query = query + ' OR "%s" IS NULL'%columns[i]
+                if union == False:
+                    for i in range(1, len(columns)):
+                        query = query + ' AND "%s" IS NULL'%columns[i]
+                self.ida_query(query)
+                return self
+                
+        else:
+            
+            #delete rows in a view only           
+            # create new table
+            newname = idadb._get_valid_tablename(prefix="TABLE_")
+            self.save_as(newname)
+            
+            print("The original table and its corresponding IdaDataFrame will not be modified.")            
+            print("A new table is available under the name %s." %newname)
+            # execute deletion on this copy
+            idx = self._indexer
+            new_idadf = IdaDataFrame(idadb, newname, idx)
+            print("To manipulate this copy, call IdaDataFrame(%s, %s, %s)" %(idadb, newname, idx))            
+
+            return new_idadf.delete_na(columns, union, True)
+    
+            
+    
+    def mapping(self, column_name, dic = None, inplace = True):
+        """
+        
+        !! for one column only !! => think about efficient method for several columns
+        
+        column : eligible column name as string (only 1 column)
+        dic : optional, dictionary to map the original categorical values to integers
+                for example: {"low":0, "middle":1, "high":2}
+        inplace : optional, if set to True, the ooriginal column is dropped and the new column takes its place and name,
+                    otherwise, a new column is created        
+        Returns : updated idadataframe. The table is physically modified. For the selected column, this method 
+        updates the values according to the dictionary oldVal:newVal.
+        If no dic is specified, then automatically generated list of numbers will be used as numerical category IDs.
+        """
+        
+        # Check if column name is not empty
+        if len(column_name)<1:
+            raise IdaDataFrameError("You must provide an eligible column name.")
+        # Check if column names are eligible
+        if not isinstance(column_name, six.string_types):
+            raise TypeError("%s is not of string type"%(column_name))
+        if column_name not in self.columns:
+            raise ValueError("%s refers to a columns that doesn't exists in self"%(column_name))
+        # Check if column can be considered as categorical:
+        if column_name not in self._get_categorical_columns():
+            raise TypeError("This column does not seem to be of categorical type.")
+        idadb = self._idadb
+        distinct = idadb.ida_query("select distinct "+str('"%s"' %column_name)+ (" from %s" %self.tablename)).tolist()                
+        
+        
+        if dic == None:
+            #generate dic            
+            dic = {}
+            c = 0
+            for item in distinct:
+                dic[item]=c
+                c=c+1
+            print("Generated dictionary")
+            print(dic)
+        
+        # check if dic is an eligible dictionary 
+        if not isinstance(dic,dict):
+            raise TypeError("%s is not of dictionary type" %dic)
+        #check if as many keys as distinct values in the column
+        if len(dic.keys()) != len(distinct):
+            raise ValueError("Input dictionary has not as many keys as the number of distinct elements in the column. Dictionary must be of format oldVal:newVal")
+        
+        def apostrophe(var):
+            """
+            adresses apostrophe issues when a category is of type string with apostrophe(s) in it.
+            adds an apostrophe next to it
+            """
+            if var is None:
+                return "None"
+            l = []
+            for i in range(len(var)):
+                if var[i] == "'":
+                    l.append(i)
+            c = 0
+            for i in l:
+                var = var[:i+c]+"'"+var[i+c:]
+                print(var)
+                c = c+1
+            return var
+        
+        new_dic = {}
+        for key in dic: 
+            new_key = apostrophe(key)
+            new_dic[new_key]=dic[key]
+        print(new_dic)
+        dic = new_dic
+
+
+        # update MUSEUMS set "MuseumType" = 0 where "MuseumType" = 'GENERAL MUSEUM';
+        if inplace == True: 
+            for key in dic:
+                query = "update "+ str(self.tablename)+" set "+str('"%s"' %column_name)+" = "+str(dic[key])+" where "+str('"%s"' %column_name)+" = "+str("'%s'" %key)               
+                idadb.ida_query(query)
+            #idadb.ida_query("ALTER TABLE "+str(self.tablename)+" ALTER COLUMN "+str('"%s"' %column_name)+" SET DATA TYPE INTEGER")
+        
+        else:
+            # generate new_col name 
+            # by default, create column of type integer with name COLUMN_NAME_CAT_0
+            new_name = column_name.upper()+"_CAT_0"
+            c=1
+            # check if new_name is eligible
+            while new_name in self.columns:
+                print("%s already exists" %new_name)
+                new_name = column_name.upper()+"_CAT_"+str(c)
+                c = c+1                
+            print(new_name)
+            idadb.ida_query("alter table %s add column %s varchar(5)" %(self.tablename, new_name))
+            
+            # update statement for each distinct value 
+            for key in dic:
+                query = "update "+ str(self.tablename)+" set "+str('"%s"' %column_name)+" = "+str(dic[key])+" where "+str('"%s"' %column_name)+" = "+str("'%s'" %key) 
+                idadb.ida_query(query) 
+        
+        #update IdaDataFrame
+        #self._reset_attributes(["columns", "dtypes", "shape"])
+        self = IdaDataFrame(idadb, self.tablename)
+        idadb.commit()
+        print(self.columns)
+        try:
+            del self.internal_state.columndict
+        except:
+                 print("Can't delete columndict. Explicitly reassign IdaDataFrame variable to the current table to update attributes. ")
+                 print("directly: idadf = idadf.mapping(column_name, dic, inplace); or once modified: idadf = IdaDataFrame(idadb, tablename, indexer)")
+        ibmdbpy.utils._reset_attributes(self, ["columns", "dtypes", "shape"])
+    
+        return self
+
+            
+        
