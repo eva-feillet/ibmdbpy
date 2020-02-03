@@ -76,7 +76,62 @@ class NaiveBayes(object):
             
         Attributes
         ----------
-        TODO
+        
+        _idadf: Get set at fit step, IdaDataFrame used as input to fit the model;
+        
+        _idadb: Get set at fit step, IdaDataBase object holding the connection to Db2;
+        
+        _column_id: Get set at fit step, name of the column of the input table which identifies the transaction or class ID.;
+        
+        target: Get set at fit step; str
+            The column of the input table that represents the class
+        
+        incolumn: Get set at fit step; str, optional
+            The columns of the input table that have specific properties,
+            which are separated by a semi-colon (;). Each column is succeeded
+            by one or more of the following properties:
+                * By type nominal (':nom') or by type continuous (':cont'). By default, numerical types are continuous, and all other types are nominal.
+                * By role ':id', ':target', ':input', or ':ignore'.
+        
+        coldeftype: Get set at fit step; str, optional
+            The default type of the input table columns.
+            The following values are allowed: 'nom' and 'cont'.
+            If the parameter is not specified, numeric columns are continuous,
+            and all other columns are nominal.
+        
+        coldefrole: Get set at fit step; str, optional
+            The default role of the input table columns.
+            The following values are allowed: 'input' and 'ignore'.
+            If the parameter is not specified, all columns are input columns.
+        
+        colpropertiestable: Get set at fit step; str, optional
+            The input table where the properties of the columns of the input table are stored.
+            If this parameter is not specified, the column properties of the input table
+            column properties are detected automatically.
+        
+        outable: Get set at predict step; str, optional
+            The name of the output table where the predictions are stored. If
+            this parameter is not specified, it is generated automatically. If
+            the parameter corresponds to an existing table in the database, it
+            will be replaced.
+        
+        outtableProb: Get set at predict step; str, optional
+            The output table where the probabilities for each of the classes are stored.
+            If this parameter is not specified, the table is not created. If
+            the parameter corresponds to an existing table in the database, it
+            will be replaced.
+        
+        mestimation: Get set at predict step; flag, default: False
+            A flag that indicates the use of m-estimation for probabilities.
+            This kind of estimation might be slower than other ones, but it
+            might produce better results for small or unbalanced data sets.
+        
+        modelname: see parameters;
+        
+        disc: see parameters;
+        
+        bins: see parameters;
+        
 
         Returns
         -------
