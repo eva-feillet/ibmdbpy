@@ -502,7 +502,7 @@ class AssociationRules(object):
         self.fit(idadf, transaction_id, item_id,  nametable, namecol, verbose)
         return self.predict(idadf, outtable, transaction_id, item_id, type, limit, sort)
 
-    def describe(self):
+    def describe(self, detail = False):
         """
         Return a description of Association Rules Model.
         """
@@ -513,7 +513,8 @@ class AssociationRules(object):
                 # Not sure it is useful
                 #res = self._idadb._call_stored_procedure("IDAX.PRINT_MODEL ", model = self.modelname)
                 res = self._idadb.ida_query("CALL IDAX.PRINT_MODEL('model = " + self.modelname +"')")
-                self._retrieve_AssociationRules_Model(self.modelname, verbose=True)
+                if detail:
+                    self._retrieve_AssociationRules_Model(self.modelname, verbose=True)
             except:
                 raise
             else:

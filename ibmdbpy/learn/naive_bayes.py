@@ -436,7 +436,7 @@ class NaiveBayes(object):
         self.fit(idadf, column_id, incolumn, coldeftype, coldefrole, colprepertiesTable, verbose)
         return self.predict(idadf, column_id, outtable, outtableProb, mestimation)
 
-    def describe(self):
+    def describe(self, detail = False):
         """
         Return a description of Naives Bayes.
         """
@@ -444,9 +444,12 @@ class NaiveBayes(object):
             return self.get_params
         else:
             try:
-                self._retrieve_NaiveBayes_Model(self.modelname, verbose=True)
+                res = self._idadb.ida_query("CALL IDAX.PRINT_MODEL('model = " + self.modelname +"')")
+                if detail:
+                    self._retrieve_NaiveBayes_Model(self.modelname, verbose=True)
             except:
                 raise
+            return res
 
 
     def _retrieve_NaiveBayes_Model(self, modelname, verbose = False):
